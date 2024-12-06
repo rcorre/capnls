@@ -1,0 +1,31 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      RUST_LOG: capnls=trace
+      RUST_BACKTRACE: 1
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose
+    - name: Install protoc
+      run: |
+        curl https://github.com/protocolbuffers/protobuf/releases/download/v28.2/protoc-28.2-linux-x86_64.zip -Lo /tmp/protoc.zip
+        unzip /tmp/protoc.zip
+        bin/protoc --version
+    - name: Test
+      run: PATH="$PATH:bin/" cargo test --verbose

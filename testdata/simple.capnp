@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package main;
+
+import "dep.proto";
+import "other.proto";
+import "folder/stuff.proto";
+
+enum Thing {
+  THING_FOO = 0;
+  THING_BAR = 1;
+  THING_BAZ = 2;
+}
+
+message Foo {
+
+  int32 i = 1;
+  Thing t = 2;
+  Dep d = 3;
+
+  message Buz {}
+}
+
+message Bar {
+  Foo f = 1;
+  other.Other other = 2;
+  Foo.Buz buz = 3;
+  other.Other.Nested other_nested = 4;
+  folder.stuff.Stuff stuff = 5;
+}
+
+message Empty {}
+

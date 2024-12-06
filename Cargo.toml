@@ -1,0 +1,28 @@
+[package]
+name = "capnls"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Cap'n Proto Language Server"
+homepage = "https://github.com/rcorre/capnls"
+repository = "https://github.com/rcorre/capnls"
+keywords = ["language-server", "capnp", "lsp"]
+categories = ["development-tools"]
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+lsp-types = "0.94"
+lsp-server = "0.7"
+toml = "0.8"
+tree-sitter = "0.20"
+log = "0.4"
+env_logger = { version = "0.10.1", default-features = false }
+walkdir = "2.4"
+regex = "1"
+anyhow = "1.0"
+tree-sitter-capnp = "1.5"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+tempfile = "3.8"
