@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 fn language() -> tree_sitter::Language {
     static LANGUAGE: OnceLock<tree_sitter::Language> = OnceLock::new();
-    *LANGUAGE.get_or_init(|| tree_sitter_protobuf::language())
+    *LANGUAGE.get_or_init(|| tree_sitter_capnp::language())
 }
 
 #[derive(Debug, PartialEq)]
@@ -139,7 +139,7 @@ impl File {
     ) -> impl Iterator<Item = &'this str> + 'cursor {
         static QUERY: OnceLock<tree_sitter::Query> = OnceLock::new();
         let query = QUERY.get_or_init(|| {
-            tree_sitter::Query::new(language(), "(import (strLit) @path)").unwrap()
+            tree_sitter::Query::new(language(), "(import_path (string_fragment) @path)").unwrap()
         });
 
         qc.matches(&query, self.tree.root_node(), self.text.as_bytes())
@@ -361,7 +361,7 @@ impl File {
     pub fn import_references(self: &Self, file: &str) -> Vec<tree_sitter::Range> {
         static QUERY: OnceLock<tree_sitter::Query> = OnceLock::new();
         let query = QUERY.get_or_init(|| {
-            tree_sitter::Query::new(language(), "(import (strLit) @name)").unwrap()
+            tree_sitter::Query::new(language(), "(import_path (string_fragment) @path)").unwrap()
         });
 
         let mut qc = tree_sitter::QueryCursor::new();

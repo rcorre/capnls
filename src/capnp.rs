@@ -1,11 +1,7 @@
 use anyhow::{bail, Context, Result};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Range, Url};
 
-pub fn diags(
-    uri: &Url,
-    text: &str,
-    proto_paths: &Vec<std::path::PathBuf>,
-) -> Result<Vec<Diagnostic>> {
+pub fn diags(uri: &Url, proto_paths: &Vec<std::path::PathBuf>) -> Result<Vec<Diagnostic>> {
     if uri.scheme() != "file" {
         bail!("Unsupported URI scheme {uri}");
     }
@@ -14,11 +10,11 @@ pub fn diags(
         bail!("Failed to normalize URI path: {uri}");
     };
 
-    let mut cmd = std::process::Command::new("protoc");
-    cmd
-        // Protoc requires some output
-        // Tell it to generate a descriptor, but discard it
-        .args(["-o", if cfg!(windows) { "NUL" } else { "/dev/null" }])
+    let mut cmd = std::process::Command::new("capnp");
+    let path = path
+        .to_str()
+        .with_context(|| format!("Non-unicode path: {path:?}"))?;
+    cmd.arg("compile")
         // Add include paths.
         .args(
             proto_paths
@@ -32,66 +28,78 @@ pub fn diags(
                 .map(|p| "-I".to_string() + p),
         )
         // Add the file we're compiling
-        .arg(
-            path.to_str()
-                .with_context(|| format!("Non-unicode path: {path:?}"))?,
-        );
+        .arg(path);
 
-    log::debug!("Running protoc: {cmd:?}");
+    log::debug!("Running capnp: {cmd:?}");
     let output = cmd.output()?;
 
-    log::debug!("Protoc exited: {output:?}");
+    log::debug!("Capnp exited: {output:?}");
     let stderr = std::str::from_utf8(output.stderr.as_slice())?;
 
-    Ok(stderr
-        .lines()
-        .filter_map(|l| parse_diag(l, &text))
-        .collect())
+    let res = stderr.lines().filter_map(|l| parse_diag(l)).collect();
+    log::trace!("Generated diagnostics: {res:?}");
+    Ok(res)
 }
 
-// Parse a single error line from the protoc parser into a diagnostic.
-// Usually each error has a line containing a location, like:
-// foo.proto:4:13: "int" is not defined
-// Other lines do not contain location info.
-// We'll return None to skip these, as usually another line contains the location.
-fn parse_diag(diag: &str, file_contents: &str) -> Option<lsp_types::Diagnostic> {
-    log::debug!("Parsing diagnostic {diag}");
-    let (_, rest) = diag.split_once(".proto:")?;
-    let (linestr, rest) = rest.split_once(':')?;
-    let (_, msg) = rest.split_once(':')?;
-    let msg = msg.trim().trim_end_matches(".");
+// Parse a single error line from the capnp parser into a diagnostic.
+// Lines look like:
+// foo.capnp:3:9: error: Parse error.
 
-    log::debug!("Parsing msg {msg}");
-    let (msg, severity) = match msg.strip_prefix("warning: ") {
-        Some(msg) => (msg, DiagnosticSeverity::WARNING),
-        None => (msg, DiagnosticSeverity::ERROR),
+fn parse_diag(diag: &str) -> Option<lsp_types::Diagnostic> {
+    let (_, rest) = diag.split_once(':')?;
+    let (lineno, rest) = rest.split_once(':')?;
+    let (colno, rest) = rest.split_once(':')?;
+    let msg = rest.strip_prefix(" error: ")?.trim().trim_end_matches(".");
+
+    // Lines from capnp stderr are 1-indexed.
+    let lineno = lineno.parse::<u32>().unwrap() - 1;
+    let (col_start, col_end) = match colno.split_once('-') {
+        Some((start, end)) => (start.parse::<u32>().unwrap(), end.parse::<u32>().unwrap()),
+        None => {
+            let start = colno.parse::<u32>().unwrap();
+            (start, start)
+        }
     };
-
-    // Lines from protoc stderr are 1-indexed.
-    let lineno = linestr.parse::<u32>().unwrap() - 1;
-    let line = file_contents.lines().skip(lineno.try_into().ok()?).next()?;
-    let start = line.find(|c: char| !c.is_whitespace()).unwrap_or(0);
-    let end = line
-        .rfind(|c: char| !c.is_whitespace())
-        .map(|c| c + 1) // include the final character
-        .unwrap_or(line.len());
 
     Some(lsp_types::Diagnostic {
         range: Range {
             start: lsp_types::Position {
                 line: lineno,
-                character: start.try_into().ok()?,
+                character: col_start.try_into().ok()?,
             },
             end: lsp_types::Position {
                 line: lineno,
-                character: end.try_into().ok()?,
+                character: col_end.try_into().ok()?,
             },
         },
-        severity: Some(severity),
+        severity: Some(DiagnosticSeverity::ERROR),
         source: Some(String::from("capnls")),
         message: msg.trim().into(),
         ..Default::default()
     })
+}
+
+#[test]
+fn test_parse_diag() {
+    assert_eq!(
+        parse_diag("foo.capnp:32:9: error: Parse error.",),
+        Some(lsp_types::Diagnostic {
+            range: Range {
+                start: lsp_types::Position {
+                    line: 31,
+                    character: 9,
+                },
+                end: lsp_types::Position {
+                    line: 31,
+                    character: 9,
+                },
+            },
+            severity: Some(DiagnosticSeverity::ERROR),
+            source: Some(String::from("capnls")),
+            message: "Parse error".into(),
+            ..Default::default()
+        })
+    )
 }
 
 #[cfg(test)]
@@ -99,7 +107,7 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    fn proto(tmp: &tempfile::TempDir, path: &str, lines: &[&str]) -> (Url, String) {
+    fn capnp_file(tmp: &tempfile::TempDir, path: &str, lines: &[&str]) -> (Url, String) {
         let path = tmp.path().join(path);
         let text = lines.join("\n") + "\n";
         std::fs::write(&path, &text).unwrap();
@@ -111,7 +119,7 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let tmp = tempfile::tempdir().unwrap();
 
-        let (uri, text) = proto(
+        let (uri, _) = capnp_file(
             &tmp,
             "foo.proto",
             &[
@@ -123,7 +131,7 @@ mod tests {
             ],
         );
 
-        let diags = diags(&uri, &text, &vec![tmp.path().to_path_buf()]).unwrap();
+        let diags = diags(&uri, &vec![tmp.path().to_path_buf()]).unwrap();
 
         assert_eq!(
             diags,
@@ -170,15 +178,15 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let tmp = tempfile::tempdir().unwrap();
 
-        proto(&tmp, "bar.proto", &["syntax = \"proto3\";"]);
+        capnp_file(&tmp, "bar.proto", &["syntax = \"proto3\";"]);
 
-        let (uri, text) = proto(
+        let (uri, _) = capnp_file(
             &tmp,
             "foo.proto",
             &["syntax = \"proto3\";", "import \"bar.proto\";"],
         );
 
-        let diags = diags(&uri, &text, &vec![tmp.path().to_path_buf()]).unwrap();
+        let diags = diags(&uri, &vec![tmp.path().to_path_buf()]).unwrap();
 
         assert_eq!(
             diags,

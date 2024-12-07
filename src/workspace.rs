@@ -2,7 +2,7 @@ use std::collections::hash_map;
 
 use crate::file::{self};
 
-use super::protoc;
+use super::capnp;
 use anyhow::{anyhow, Context, Result};
 use lsp_types::{SymbolInformation, Url};
 use regex::RegexBuilder;
@@ -109,7 +109,7 @@ impl Workspace {
     // Open and parse an imported file if we haven't already
     fn open_import(&mut self, name: &str) -> Result<()> {
         let Some(path) = self.find_import(name) else {
-            // TODO: Could generate not-found import diagnostic here, if we stop using protoc
+            // TODO: Could generate not-found import diagnostic here, if we stop using capnp
             return Ok(());
         };
 
@@ -130,7 +130,7 @@ impl Workspace {
     }
 
     pub fn open(&mut self, uri: Url, text: String) -> Result<Vec<lsp_types::Diagnostic>> {
-        let diags = protoc::diags(&uri, &text, &self.proto_paths);
+        let diags = capnp::diags(&uri, &self.proto_paths);
         let file = file::File::new(text)?;
 
         let mut qc = tree_sitter::QueryCursor::new();
@@ -146,8 +146,7 @@ impl Workspace {
     }
 
     pub fn save(&mut self, uri: Url) -> Result<Vec<lsp_types::Diagnostic>> {
-        let file = self.get(&uri)?;
-        protoc::diags(&uri, &file.text(), &self.proto_paths)
+        capnp::diags(&uri, &self.proto_paths)
     }
 
     pub fn edit(

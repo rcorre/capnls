@@ -1,5 +1,5 @@
+mod capnp;
 mod file;
-mod protoc;
 mod workspace;
 
 use lsp_types::notification::DidChangeTextDocument;
