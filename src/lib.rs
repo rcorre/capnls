@@ -2,11 +2,20 @@ mod capnp;
 mod file;
 mod workspace;
 
+use anyhow::Context;
 use lsp_types::notification::DidChangeTextDocument;
+use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
+use lsp_types::CodeAction;
+use lsp_types::CodeActionKind;
+use lsp_types::CodeActionOrCommand;
+use lsp_types::CodeActionParams;
+use lsp_types::CodeActionResponse;
 use lsp_types::CompletionParams;
 use lsp_types::CompletionResponse;
 use lsp_types::DidChangeTextDocumentParams;
+use lsp_types::Position;
+use lsp_types::Range;
 use lsp_types::ReferenceParams;
 use lsp_types::SaveOptions;
 use lsp_types::TextDocumentSyncKind;
@@ -14,6 +23,8 @@ use lsp_types::TextDocumentSyncKind;
 use lsp_server::{Connection, Message};
 use lsp_types::request::References;
 use lsp_types::request::{DocumentSymbolRequest, GotoDefinition, Request, WorkspaceSymbolRequest};
+use lsp_types::TextEdit;
+use lsp_types::WorkspaceEdit;
 use lsp_types::{
     notification::{DidOpenTextDocument, DidSaveTextDocument, Notification, PublishDiagnostics},
     DiagnosticServerCapabilities, InitializeParams, ServerCapabilities, TextDocumentSyncCapability,
@@ -93,6 +104,50 @@ fn handle_document_symbols(
     Ok(Some(DocumentSymbolResponse::Flat(
         workspace.symbols(&params.text_document.uri)?,
     )))
+}
+
+// TODO: integration test.
+fn handle_code_action(
+    _workspace: &mut workspace::Workspace,
+    params: CodeActionParams,
+) -> Result<Option<CodeActionResponse>> {
+    let Some(diag) = params
+        .context
+        .diagnostics
+        .into_iter()
+        .find(|diag| diag.message.starts_with("File does not declare an ID"))
+    else {
+        log::debug!("No diagnostic supports a code action");
+        return Ok(None);
+    };
+    let id = diag
+        .message
+        .find("@0x")
+        .with_context(|| format!("No ID found in: {}", diag.message))?;
+    let id = diag.message[id..].to_string() + "\n\n";
+    Ok(Some(vec![CodeActionOrCommand::CodeAction(CodeAction {
+        title: format!("Insert {id}"),
+        kind: Some(CodeActionKind::QUICKFIX),
+        diagnostics: Some(vec![diag]),
+        edit: Some(WorkspaceEdit {
+            changes: Some(
+                [(
+                    params.text_document.uri,
+                    vec![TextEdit {
+                        range: Range {
+                            start: Position::new(0, 0),
+                            end: Position::new(0, 0),
+                        },
+                        new_text: id,
+                    }],
+                )]
+                .into(),
+            ),
+            ..Default::default()
+        }),
+        is_preferred: Some(true),
+        ..Default::default()
+    })]))
 }
 
 fn handle_workspace_symbols(
@@ -242,6 +297,7 @@ pub fn run(connection: Connection) -> Result<()> {
                 ..Default::default()
             },
         )),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
         ..Default::default()
     })
     .unwrap();
@@ -320,6 +376,11 @@ pub fn run(connection: Connection) -> Result<()> {
                     Completion::METHOD => {
                         Some(handle::<Completion>(&mut workspace, req, handle_completion))
                     }
+                    CodeActionRequest::METHOD => Some(handle::<CodeActionRequest>(
+                        &mut workspace,
+                        req,
+                        handle_code_action,
+                    )),
                     _ => None,
                 };
                 if let Some(resp) = resp {

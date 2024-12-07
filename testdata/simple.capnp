@@ -1,8 +1,5 @@
-syntax = "proto3";
 
-package main;
-
-import "dep.proto";
+using import "dep.capnp".Dep;
 import "other.proto";
 import "folder/stuff.proto";
 

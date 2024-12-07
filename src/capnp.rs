@@ -44,7 +44,6 @@ pub fn diags(uri: &Url, proto_paths: &Vec<std::path::PathBuf>) -> Result<Vec<Dia
 // Parse a single error line from the capnp parser into a diagnostic.
 // Lines look like:
 // foo.capnp:3:9: error: Parse error.
-
 fn parse_diag(diag: &str) -> Option<lsp_types::Diagnostic> {
     let (_, rest) = diag.split_once(':')?;
     let (lineno, rest) = rest.split_once(':')?;
@@ -52,7 +51,7 @@ fn parse_diag(diag: &str) -> Option<lsp_types::Diagnostic> {
     let msg = rest.strip_prefix(" error: ")?.trim().trim_end_matches(".");
 
     // Lines from capnp stderr are 1-indexed.
-    let lineno = lineno.parse::<u32>().unwrap() - 1;
+    let lineno = lineno.parse::<u32>().unwrap().saturating_sub(1);
     let (col_start, col_end) = match colno.split_once('-') {
         Some((start, end)) => (start.parse::<u32>().unwrap(), end.parse::<u32>().unwrap()),
         None => {
@@ -60,6 +59,9 @@ fn parse_diag(diag: &str) -> Option<lsp_types::Diagnostic> {
             (start, start)
         }
     };
+    // Columns are 1-indexed as well
+    let col_start = col_start.saturating_sub(1);
+    let col_end = col_end.saturating_sub(1);
 
     Some(lsp_types::Diagnostic {
         range: Range {

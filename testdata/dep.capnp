@@ -1,12 +1,10 @@
-syntax = "proto3";
+@0x9875c0ab40ed9cb0;
 
-package main;
-
-message Dep {
-  int32 i = 1;
+struct Dep {
+  i @0 :Int32;
 }
 
 enum Dep2 {
-  DEP_UNSPECIFIED = 0;
-  DEP_ONE = 1;
+  unspecified @0;
+  one @1;
 }
