@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::sync::OnceLock;
+use std::{collections::HashSet, sync::OnceLock};
 
 fn language() -> tree_sitter::Language {
     static LANGUAGE: OnceLock<tree_sitter::Language> = OnceLock::new();
@@ -129,10 +129,8 @@ impl File {
         res
     }
 
-    pub fn imports<'this: 'cursor, 'cursor>(
-        &'this self,
-        qc: &'cursor mut tree_sitter::QueryCursor,
-    ) -> impl Iterator<Item = &'this str> + 'cursor {
+    // Return the list of files this file imports.
+    pub fn imports(&self, qc: &mut tree_sitter::QueryCursor) -> HashSet<String> {
         static QUERY: OnceLock<tree_sitter::Query> = OnceLock::new();
         let query = QUERY.get_or_init(|| {
             tree_sitter::Query::new(language(), "(import_path (string_fragment) @path)").unwrap()
@@ -141,7 +139,8 @@ impl File {
         qc.matches(&query, self.tree.root_node(), self.text.as_bytes())
             .map(|m| m.captures[0].node)
             .map(|n| self.get_text(n))
-            .map(|s| s.trim_matches('"'))
+            .map(|s| s.trim_matches('"').to_string())
+            .collect()
     }
 
     pub fn symbols<'this: 'cursor, 'cursor>(
@@ -582,17 +581,24 @@ mod tests {
     fn test_imports() {
         let _ = env_logger::builder().is_test(true).try_init();
         let text = r#"
-            syntax="proto3";
-            package main;
-            import "foo.proto";
-            import "bar.proto";
-            import "ba
+            @0xf80ac8f51ec33627;
+            using Foo = import "foo.capnp";
+            using Foo2 = import "foo.capnp";
+            using import "bar.capnp".Bar;
+            using import "bar.capnp".Baz;
+            struct Foo {
+              baz @0 :import "buz.capnp".Boo;
+            }
         "#;
         let file = File::new(text.to_string()).unwrap();
         let mut qc = tree_sitter::QueryCursor::new();
         assert_eq!(
-            file.imports(&mut qc).collect::<Vec<_>>(),
-            vec!["foo.proto", "bar.proto"]
+            file.imports(&mut qc),
+            HashSet::from([
+                "foo.capnp".to_string(),
+                "bar.capnp".to_string(),
+                "buz.capnp".to_string()
+            ])
         );
     }
 

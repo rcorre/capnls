@@ -6,7 +6,7 @@ using Stuff = import "folder/stuff.capnp";
 
 enum Thing {
    foo @0;
-   bar @0;
+   bar @1;
    baz @2;
 }
 

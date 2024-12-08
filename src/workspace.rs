@@ -121,7 +121,7 @@ impl Workspace {
         let text = std::fs::read_to_string(path)?;
         let file = file::File::new(text)?;
         let mut qc = tree_sitter::QueryCursor::new();
-        let imports = Vec::from_iter(file.imports(&mut qc).map(str::to_string));
+        let imports = file.imports(&mut qc);
         self.files.insert(uri, file);
         for import in imports {
             self.open_import(import.as_str())?;
@@ -134,7 +134,7 @@ impl Workspace {
         let file = file::File::new(text)?;
 
         let mut qc = tree_sitter::QueryCursor::new();
-        let imports = Vec::from_iter(file.imports(&mut qc).map(str::to_string));
+        let imports = file.imports(&mut qc);
 
         self.files.insert(uri.clone(), file);
 
@@ -162,7 +162,7 @@ impl Workspace {
         file.edit(changes)?;
 
         let mut qc = tree_sitter::QueryCursor::new();
-        let imports = Vec::from_iter(file.imports(&mut qc).map(str::to_string));
+        let imports = file.imports(&mut qc);
 
         for import in imports {
             log::trace!("Loading new import {import:?}");
@@ -399,7 +399,8 @@ impl Workspace {
         let mut qc = tree_sitter::QueryCursor::new();
         let imports = file
             .imports(&mut qc)
-            .filter_map(|name| self.find_import(name))
+            .into_iter()
+            .filter_map(|name| self.find_import(&name))
             .map(|path| Url::from_file_path(path).unwrap())
             .map(|uri| (uri.clone(), self.get(&uri).unwrap()));
 
@@ -455,7 +456,8 @@ impl Workspace {
 
         let imports = file
             .imports(&mut qc)
-            .filter_map(|name| self.find_import(name))
+            .into_iter()
+            .filter_map(|name| self.find_import(&name))
             .map(|path| Url::from_file_path(path).unwrap())
             .map(|uri| self.get(&uri).unwrap());
 
@@ -521,7 +523,8 @@ impl Workspace {
         let mut qc = tree_sitter::QueryCursor::new();
         let existing = file
             .imports(&mut qc)
-            .chain(std::iter::once(current))
+            .into_iter()
+            .chain(std::iter::once(current.to_string()))
             .collect::<Vec<_>>();
 
         log::trace!("Excluding existing imports: {existing:?}");
@@ -532,7 +535,7 @@ impl Workspace {
             .map(|p| find_protos(p.as_path()))
             .flat_map(|p| {
                 p.iter()
-                    .filter(|s| !existing.contains(&s.as_str()))
+                    .filter(|s| !existing.contains(s))
                     .map(|s| lsp_types::CompletionItem {
                         insert_text: Some(format!("{}\";", s)),
                         label: s.to_owned(),
