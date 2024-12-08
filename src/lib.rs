@@ -2,7 +2,6 @@ mod capnp;
 mod file;
 mod workspace;
 
-use anyhow::Context;
 use lsp_types::notification::DidChangeTextDocument;
 use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
@@ -13,6 +12,7 @@ use lsp_types::CodeActionParams;
 use lsp_types::CodeActionResponse;
 use lsp_types::CompletionParams;
 use lsp_types::CompletionResponse;
+use lsp_types::Diagnostic;
 use lsp_types::DidChangeTextDocumentParams;
 use lsp_types::Position;
 use lsp_types::Range;
@@ -24,6 +24,7 @@ use lsp_server::{Connection, Message};
 use lsp_types::request::References;
 use lsp_types::request::{DocumentSymbolRequest, GotoDefinition, Request, WorkspaceSymbolRequest};
 use lsp_types::TextEdit;
+use lsp_types::Url;
 use lsp_types::WorkspaceEdit;
 use lsp_types::{
     notification::{DidOpenTextDocument, DidSaveTextDocument, Notification, PublishDiagnostics},
@@ -106,33 +107,20 @@ fn handle_document_symbols(
     )))
 }
 
-// TODO: integration test.
-fn handle_code_action(
-    _workspace: &mut workspace::Workspace,
-    params: CodeActionParams,
-) -> Result<Option<CodeActionResponse>> {
-    let Some(diag) = params
-        .context
-        .diagnostics
-        .into_iter()
-        .find(|diag| diag.message.starts_with("File does not declare an ID"))
-    else {
-        log::debug!("No diagnostic supports a code action");
-        return Ok(None);
-    };
-    let id = diag
-        .message
-        .find("@0x")
-        .with_context(|| format!("No ID found in: {}", diag.message))?;
+fn diagnostic_to_action(uri: &Url, diag: Diagnostic) -> Option<CodeActionOrCommand> {
+    if !diag.message.starts_with("File does not declare an ID") {
+        return None;
+    }
+    let id = diag.message.find("@0x")?;
     let id = diag.message[id..].to_string() + "\n\n";
-    Ok(Some(vec![CodeActionOrCommand::CodeAction(CodeAction {
+    Some(CodeActionOrCommand::CodeAction(CodeAction {
         title: format!("Insert {id}"),
         kind: Some(CodeActionKind::QUICKFIX),
         diagnostics: Some(vec![diag]),
         edit: Some(WorkspaceEdit {
             changes: Some(
                 [(
-                    params.text_document.uri,
+                    uri.to_owned(),
                     vec![TextEdit {
                         range: Range {
                             start: Position::new(0, 0),
@@ -147,7 +135,22 @@ fn handle_code_action(
         }),
         is_preferred: Some(true),
         ..Default::default()
-    })]))
+    }))
+}
+
+// TODO: integration test.
+fn handle_code_action(
+    _workspace: &mut workspace::Workspace,
+    params: CodeActionParams,
+) -> Result<Option<CodeActionResponse>> {
+    Ok(Some(
+        params
+            .context
+            .diagnostics
+            .into_iter()
+            .filter_map(|diag| diagnostic_to_action(&params.text_document.uri, diag))
+            .collect(),
+    ))
 }
 
 fn handle_workspace_symbols(

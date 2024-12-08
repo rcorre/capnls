@@ -1,11 +1,9 @@
-syntax = "proto3";
+@0xe3bfecd5dd0a4601;
 
-package folder.what;
+using Stuff = import "stuff.capnp";
 
-import "folder/stuff.proto";
-
-message What{
-    stuff.Stuff a = 1;
-    folder.stuff.Stuff b = 2;
+struct What{
+     a @0 :Stuff.Stuff;
+     b @1 :import "stuff.capnp".Stuff;
 }
 

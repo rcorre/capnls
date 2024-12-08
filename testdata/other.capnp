@@ -1,11 +1,9 @@
-syntax = "proto3";
+@0xbba07faf956a3e35;
 
-package other;
+struct Other {
+  i @0 :Int32;
 
-message Other {
-  int32 i = 1;
-
-  message Nested {
+  struct Nested {
   }
 }
 

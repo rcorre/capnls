@@ -113,10 +113,6 @@ impl File {
         node.utf8_text(self.text.as_bytes()).unwrap()
     }
 
-    pub fn text(&self) -> &str {
-        self.text.as_str()
-    }
-
     pub fn package(&self) -> Option<&str> {
         static QUERY: OnceLock<tree_sitter::Query> = OnceLock::new();
         let query = QUERY.get_or_init(|| {

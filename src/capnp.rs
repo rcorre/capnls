@@ -74,9 +74,13 @@ fn parse_diag(diag: &str) -> Option<lsp_types::Diagnostic> {
                 character: col_end.try_into().ok()?,
             },
         },
-        severity: Some(DiagnosticSeverity::ERROR),
+        severity: Some(if msg.ends_with("originally used here") {
+            DiagnosticSeverity::HINT
+        } else {
+            DiagnosticSeverity::ERROR
+        }),
         source: Some(String::from("capnls")),
-        message: msg.trim().into(),
+        message: msg.into(),
         ..Default::default()
     })
 }
@@ -89,11 +93,11 @@ fn test_parse_diag() {
             range: Range {
                 start: lsp_types::Position {
                     line: 31,
-                    character: 9,
+                    character: 8,
                 },
                 end: lsp_types::Position {
                     line: 31,
-                    character: 9,
+                    character: 8,
                 },
             },
             severity: Some(DiagnosticSeverity::ERROR),
@@ -107,6 +111,7 @@ fn test_parse_diag() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lsp_types::Position;
     use pretty_assertions::assert_eq;
 
     fn capnp_file(tmp: &tempfile::TempDir, path: &str, lines: &[&str]) -> (Url, String) {
@@ -123,91 +128,86 @@ mod tests {
 
         let (uri, _) = capnp_file(
             &tmp,
-            "foo.proto",
+            "foo.capnp",
             &[
-                "syntax = \"proto3\";",
-                "message Foo {",
-                "int i = 1;",
-                "uint32 u = 1;",
+                "@0xeb77878e33236528;",
+                "struct Foo {",
+                "i @0 :Int32;",
+                "u @0 :Int32;",
+                "one_two @1 :Int32;",
+                "unknown @2 :Unknown;",
                 "}",
             ],
         );
 
         let diags = diags(&uri, &vec![tmp.path().to_path_buf()]).unwrap();
 
-        assert_eq!(
-            diags,
-            vec![
-                Diagnostic {
-                    range: Range {
-                        start: lsp_types::Position {
-                            line: 2,
-                            character: 0,
-                        },
-                        end: lsp_types::Position {
-                            line: 2,
-                            character: 10,
-                        },
-                    },
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("capnls".into()),
-                    message: "\"int\" is not defined".into(),
-                    ..Default::default()
-                },
-                Diagnostic {
-                    range: Range {
-                        start: lsp_types::Position {
-                            line: 3,
-                            character: 0,
-                        },
-                        end: lsp_types::Position {
-                            line: 3,
-                            character: 13,
-                        },
-                    },
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("capnls".into()),
-                    message: "Field number 1 has already been used in \"Foo\" by field \"i\""
-                        .into(),
-                    ..Default::default()
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn test_warnings() {
-        let _ = env_logger::builder().is_test(true).try_init();
-        let tmp = tempfile::tempdir().unwrap();
-
-        capnp_file(&tmp, "bar.proto", &["syntax = \"proto3\";"]);
-
-        let (uri, _) = capnp_file(
-            &tmp,
-            "foo.proto",
-            &["syntax = \"proto3\";", "import \"bar.proto\";"],
-        );
-
-        let diags = diags(&uri, &vec![tmp.path().to_path_buf()]).unwrap();
-
-        assert_eq!(
-            diags,
-            vec![Diagnostic {
+        let expected = [
+            Diagnostic {
                 range: Range {
-                    start: lsp_types::Position {
-                        line: 1,
+                    start: Position {
+                        line: 4,
                         character: 0,
                     },
+                    end: Position {
+                        line: 4,
+                        character: 7,
+                    },
+                },
+                severity: Some(DiagnosticSeverity::ERROR),
+                source: Some("capnls".into()),
+                message: "Cap'n Proto declaration names should use camelCase and must not contain underscores. (Code generators may convert names to the appropriate style for the target language.)".into(),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 3,
+                        character: 3,
+                    },
+                    end: Position {
+                        line: 3,
+                        character: 4,
+                    },
+                },
+                severity: Some(DiagnosticSeverity::ERROR),
+                source: Some("capnls".into()),
+                message: "Duplicate ordinal number".into(),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 2,
+                        character: 3,
+                    },
+                    end: Position {
+                        line: 2,
+                        character: 4,
+                    },
+                },
+                severity: Some(DiagnosticSeverity::HINT),
+                source: Some("capnls".into()),
+                message: "Ordinal @0 originally used here".into(),
+                ..Default::default()
+            },
+            Diagnostic {
+                range: Range {
+                    start: lsp_types::Position {
+                        line: 5,
+                        character: 12,
+                    },
                     end: lsp_types::Position {
-                        line: 1,
+                        line: 5,
                         character: 19,
                     },
                 },
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: Some(DiagnosticSeverity::ERROR),
                 source: Some("capnls".into()),
-                message: "Import bar.proto is unused".into(),
+                message: "Not defined: Unknown".into(),
                 ..Default::default()
-            },]
-        );
+            },
+        ];
+        assert_eq!(diags, expected);
     }
 }

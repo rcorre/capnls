@@ -1,30 +1,31 @@
+@0xf80ac8f51ec33627;
 
 using import "dep.capnp".Dep;
-import "other.proto";
-import "folder/stuff.proto";
+using Other = import "other.capnp";
+using Stuff = import "folder/stuff.capnp";
 
 enum Thing {
-  THING_FOO = 0;
-  THING_BAR = 1;
-  THING_BAZ = 2;
+   foo @0;
+   bar @0;
+   baz @2;
 }
 
-message Foo {
+struct Foo {
 
-  int32 i = 1;
-  Thing t = 2;
-  Dep d = 3;
+   i @0 :Int32;
+   t @1 :Thing;
+   d @2 :Dep;
 
-  message Buz {}
+  struct Buz {}
 }
 
-message Bar {
-  Foo f = 1;
-  other.Other other = 2;
-  Foo.Buz buz = 3;
-  other.Other.Nested other_nested = 4;
-  folder.stuff.Stuff stuff = 5;
+struct Bar {
+   f @0 :Foo;
+   other @1 :Other.Other;
+   buz @2 :Foo.Buz;
+   otherNested @3 :Other.Other.Nested;
+   stuff @4 :Stuff.Stuff;
 }
 
-message Empty {}
+struct Empty {}
 

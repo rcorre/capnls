@@ -1,5 +1,3 @@
-syntax = "proto3";
+@0x8e379f4c5f3e7e63;
 
-package folder.stuff;
-
-message Stuff{}
+struct Stuff{}
