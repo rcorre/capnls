@@ -152,8 +152,8 @@ impl File {
             tree_sitter::Query::new(
                 language(),
                 "[
-                     (message (messageName (ident) @id))
-                     (enum (enumName (ident) @id))
+                     (enum (enum_identifier) @id)
+                     (struct (type_identifier) @id)
                  ] @def",
             )
             .unwrap()
@@ -213,12 +213,12 @@ impl File {
             // Hit the document root
             None => None,
             // Don't complete if we're typing a field name or number
-            Some(n) if n.kind() == "fieldName" => None,
-            Some(n) if n.kind() == "enumBody" => n
+            Some(n) if n.kind() == "field_identifier" => None,
+            Some(n) if n.kind() == "enum" => n
                 .parent() // enum
                 .and_then(|p| self.type_name(p))
                 .and_then(|n| Some(CompletionContext::Enum(n))),
-            Some(n) if n.kind() == "messageBody" => n
+            Some(n) if n.kind() == "struct" => n
                 .parent() // message
                 .and_then(|p| self.type_name(p))
                 .and_then(|n| Some(CompletionContext::Message(n))),
@@ -414,7 +414,8 @@ impl File {
         let mut res = Vec::<&str>::new();
         loop {
             if let Some(parent) = node.parent() {
-                if parent.kind() == "message" {
+                log::trace!("Parent of {node:?} is {parent:?}");
+                if parent.kind() == "struct" {
                     let name = self.type_name(parent);
                     log::trace!("Appending parent name {name:?}");
                     name.map(|n| res.push(n));
@@ -432,17 +433,20 @@ impl File {
         }
     }
 
-    // Get the name of a Enum or Message node.
+    // Get the name of a enum or struct node.
     fn type_name(&self, node: tree_sitter::Node) -> Option<&str> {
-        debug_assert!(
-            node.kind() == "enum" || node.kind() == "message",
-            "{node:?}"
-        );
+        //  ["message", "statement", "definition", "enum", "enum_identifier"]
+        //  ["message", "statement", "definition", "struct", "type_identifier"]
+        log::trace!("Determining type name of {node:?}");
         let mut cursor = node.walk();
-        let child = node
+        let node = node
             .named_children(&mut cursor)
-            .find(|c| c.kind() == "messageName" || c.kind() == "enumName");
-        child.and_then(|c| c.utf8_text(self.text.as_bytes()).ok())
+            .inspect(|x| eprintln!("{}", x.kind()))
+            .find(|x| x.kind() == "type_identifier")?;
+
+        eprintln!("got statement");
+
+        node.utf8_text(self.text.as_bytes()).ok()
     }
 }
 
@@ -606,13 +610,12 @@ mod tests {
     fn test_symbols() {
         let _ = env_logger::builder().is_test(true).try_init();
         let text = r#"
-            syntax="proto3"; 
-            package main;
-            message Foo{}
+            @0xf80ac8f51ec33627;
+            struct Foo{}
             enum Bar{}
-            message Baz{
-                message Biz{
-                    message Buz{}
+            struct Baz{
+                struct Biz{
+                    struct Buz{}
                 }
             }
         "#;
@@ -627,8 +630,8 @@ mod tests {
                     range: tree_sitter::Range {
                         start_byte: 69,
                         end_byte: 82,
-                        start_point: Point { row: 3, column: 12 },
-                        end_point: Point { row: 3, column: 25 },
+                        start_point: Point { row: 2, column: 12 },
+                        end_point: Point { row: 2, column: 25 },
                     },
                 },
                 Symbol {
@@ -637,8 +640,8 @@ mod tests {
                     range: tree_sitter::Range {
                         start_byte: 95,
                         end_byte: 105,
-                        start_point: Point { row: 4, column: 12 },
-                        end_point: Point { row: 4, column: 22 },
+                        start_point: Point { row: 3, column: 12 },
+                        end_point: Point { row: 3, column: 22 },
                     },
                 },
                 Symbol {
@@ -647,28 +650,28 @@ mod tests {
                     range: tree_sitter::Range {
                         start_byte: 118,
                         end_byte: 225,
-                        start_point: Point { row: 5, column: 12 },
-                        end_point: Point { row: 9, column: 13 },
+                        start_point: Point { row: 4, column: 12 },
+                        end_point: Point { row: 8, column: 13 },
                     },
                 },
                 Symbol {
                     kind: SymbolKind::Message,
                     name: "Baz.Biz".into(),
                     range: tree_sitter::Range {
-                        start_byte: 147,
-                        end_byte: 211,
-                        start_point: Point { row: 6, column: 16 },
-                        end_point: Point { row: 8, column: 17 },
+                        start_byte: 122,
+                        end_byte: 184,
+                        start_point: Point { row: 5, column: 16 },
+                        end_point: Point { row: 7, column: 17 },
                     },
                 },
                 Symbol {
                     kind: SymbolKind::Message,
                     name: "Baz.Biz.Buz".into(),
                     range: tree_sitter::Range {
-                        start_byte: 180,
-                        end_byte: 193,
-                        start_point: Point { row: 7, column: 20 },
-                        end_point: Point { row: 7, column: 33 },
+                        start_byte: 154,
+                        end_byte: 166,
+                        start_point: Point { row: 6, column: 20 },
+                        end_point: Point { row: 6, column: 32 },
                     },
                 },
             ]
